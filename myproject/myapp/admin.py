@@ -1,5 +1,9 @@
 from django.contrib import admin
-from myapp.models import Person
+from .models import Quiz, Question, Choice, Attempt, Answer, Profile
 
-# Register your models here.
-admin.site.register(Person)
+admin.site.register(Profile)
+admin.site.register(Quiz)
+admin.site.register(Question)
+admin.site.register(Choice)
+admin.site.register(Attempt)
+admin.site.register(Answer)
