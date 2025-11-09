@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+
+{% block title %}Result — {{ attempt.quiz.title }}{% endblock %}
+
+{% block content %}
+<h2>Result: {{ attempt.quiz.title }}</h2>
+
+<p>Started: {{ attempt.started_at }}</p>
+<p>Finished: {{ attempt.finished_at }}</p>
+{% if attempt.score != None %}
+  <p>Score: {{ attempt.score|floatformat:2 }}%</p>
+{% else %}
+  <p>Score: Not available (requires manual grading of short answers)</p>
+{% endif %}
+
+<hr>
+<h4>Answers</h4>
+<ul class="list-group">
+  {% for a in answers %}
+    <li class="list-group-item">
+      <strong>Q:</strong> {{ a.question.text }}<br>
+      {% if a.selected_choice %}
+        <strong>Your answer:</strong> {{ a.selected_choice.text }}
+        {% if a.selected_choice.is_correct %}
+          <span class="badge bg-success">Correct</span>
+        {% else %}
+          <span class="badge bg-danger">Wrong</span>
+        {% endif %}
+      {% else %}
+        <strong>Your answer (text):</strong> {{ a.text|default:"(no answer)" }}
+      {% endif %}
+    </li>
+  {% endfor %}
+</ul>
+
+<a class="btn btn-secondary mt-3" href="{% url 'take_quiz:quiz_list' %}">Back to quizzes</a>
+{% endblock %}
