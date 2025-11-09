@@ -10,6 +10,7 @@
   <form method="post" id="question-form">
     {% csrf_token %}
 
+    {# Question non-field errors #}
     {% if form.non_field_errors %}
       <div class="alert alert-danger">{{ form.non_field_errors }}</div>
     {% endif %}
@@ -30,12 +31,12 @@
       {% endif %}
     </div>
 
-    {{ form.order }} {# hidden widget as set in form class #}
+    {{ form.order }} {# hidden widget expected from form definition #}
 
     <div id="choices-block" class="mb-3" {% if not formset %}style="display:none"{% endif %}>
       <div class="d-flex align-items-center mb-2">
         <button type="button" class="btn btn-sm btn-outline-primary me-2" id="add-choice-btn">Add choice</button>
-        <div class="form-text">For MCQ: at least 2 choices required and at least one must be correct.</div>
+        <div class="form-text">For MCQ: at least 2 choices required and exactly one must be correct.</div>
       </div>
 
       {% if formset %}
@@ -46,10 +47,9 @@
         {% endif %}
 
         <div id="choices-container">
-          {# Existing forms: render fields explicitly; render DELETE only as hidden input #}
+          {# Existing bound forms (render fields explicitly, DELETE as hidden) #}
           {% for f in formset.forms %}
             <div class="choice-item mb-2 border rounded p-2" data-form-index="{{ forloop.counter0 }}">
-              {# hidden fields like id #}
               {% for hidden in f.hidden_fields %}
                 {{ hidden }}
               {% endfor %}
@@ -68,7 +68,7 @@
                 {% endif %}
               </div>
 
-              {# Render DELETE as hidden input so no visible checkbox appears #}
+              {# show DELETE as hidden input only #}
               {% if f.DELETE %}
                 <input type="hidden" name="{{ f.DELETE.html_name }}" id="{{ f.DELETE.auto_id }}" value="{{ f.DELETE.value|default_if_none:'' }}">
               {% endif %}
@@ -78,7 +78,7 @@
           {% endfor %}
         </div>
 
-        {# Empty form: render explicit fields to avoid any auto-checkbox for DELETE #}
+        {# Empty form template for JS cloning - render visible fields explicitly #}
         <div id="empty-form-template" style="display:none">
           <div class="choice-item mb-2 border rounded p-2" data-form-index="__prefix__">
             <div class="mb-2">
@@ -87,10 +87,7 @@
             <div class="form-check mb-2">
               {{ formset.empty_form.is_correct }} {{ formset.empty_form.is_correct.label_tag }}
             </div>
-
-            {# ensure a hidden DELETE input exists for new forms (empty initially) #}
             <input type="hidden" name="{{ formset.empty_form.DELETE.html_name }}" value="">
-
             <button type="button" class="btn btn-sm btn-danger remove-choice-btn">Remove</button>
           </div>
         </div>
@@ -150,7 +147,6 @@
   if(addBtn && emptyTplEl){
     addBtn.addEventListener('click', function(){
       const idx = getTotalForms();
-      // build new element from empty template (replace __prefix__)
       let newHtml = emptyTplEl.innerHTML.replace(/__prefix__/g, idx);
       const wrapper = document.createElement('div');
       wrapper.innerHTML = newHtml;
@@ -163,18 +159,26 @@
   }
 
   if(container){
+    container.addEventListener('change', function(e){
+      const target = e.target;
+      if(!target) return;
+      if(target.matches('input[type="checkbox"][name$="-is_correct"], input[type="checkbox"][id$="-is_correct"]')){
+        if(target.checked){
+          const boxes = container.querySelectorAll('input[type="checkbox"][name$="-is_correct"]');
+          boxes.forEach(b => { if(b !== target) b.checked = false; });
+        }
+      }
+    });
+
     container.addEventListener('click', function(e){
       if(e.target && e.target.classList.contains('remove-choice-btn')){
         const item = e.target.closest('.choice-item');
         if(!item) return;
-        // find DELETE hidden input
         const delInput = item.querySelector('input[name$="-DELETE"]');
         if(delInput){
-          // mark deleted and hide
           delInput.value = 'on';
           item.style.display = 'none';
         } else {
-          // newly added non-saved form: remove and decrement TOTAL_FORMS
           item.remove();
           setTotalForms(getTotalForms() - 1);
           reindexForms();

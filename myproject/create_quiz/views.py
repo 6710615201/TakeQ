@@ -18,7 +18,6 @@ class QuizListView(ListView):
 	context_object_name = "quizzes"
 
 	def get_queryset(self):
-		# creators see their quizzes first; teachers can extend permission later
 		return Quiz.objects.filter(creator=self.request.user).order_by("-created_at")
 
 @method_decorator(login_required, name="dispatch")
@@ -44,7 +43,6 @@ class QuizUpdateView(UpdateView):
         return Quiz.objects.filter(creator=self.request.user)
 
     def get_success_url(self):
-        # redirect to quiz detail after successful edit
         return reverse("create_quiz:quiz_detail", args=[self.object.pk])
 
 @method_decorator(login_required, name="dispatch")
@@ -59,59 +57,86 @@ class QuizDetailView(DetailView):
 class QuizDeleteView(LoginRequiredMixin, UserPassesTestMixin, DeleteView):
     model = Quiz
     template_name = "create_quiz/quiz_confirm_delete.html"
-    # redirect to quiz list after successful delete
     success_url = reverse_lazy("create_quiz:quiz_list")
 
     def test_func(self):
-        # only allow creator to delete
         obj = self.get_object()
         return obj.creator == self.request.user
 
 
 @login_required
 def add_question(request, quiz_id):
+    """
+    Robust add-question view:
+    - make a mutable copy of POST and fill defaults (order, qtype) so QuestionForm validates
+    - always use prefix "choice_set" for Choice formset binding
+    - when formset invalid, attach formset.non_form_errors into qform non-field errors for reliable display
+    """
     quiz = get_object_or_404(Quiz, pk=quiz_id, creator=request.user)
+    ChoiceFormSetClass = make_choice_formset(extra=1, can_delete=True)
+    prefix = "choice_set"
 
     if request.method == "POST":
-        qform = QuestionForm(request.POST)
-        if qform.is_valid():
-            # create question record first so formset can bind to instance
-            q = qform.save(commit=False)
-            q.quiz = quiz
-            # set order to end if not provided or zero
-            if not q.order:
-                q.order = quiz.questions.count() + 1
-            q.save()
+        post = request.POST.copy()
+        if not post.get("qtype"):
+            post["qtype"] = "short"
+        if not post.get("order"):
+            post["order"] = str(quiz.questions.count() + 1)
 
-            # only process choices when MCQ
-            if q.qtype == "mcq":
-                ChoiceFormSet = make_choice_formset(extra=0, can_delete=True)
-                formset = ChoiceFormSet(request.POST, instance=q)
-                # formset has access to instance so validation can check existing values
+        qform = QuestionForm(post)
+        qform_is_valid = qform.is_valid()
+        posted_qtype = post.get("qtype")
+
+        question_instance = None
+        if qform_is_valid:
+            question_instance = qform.save(commit=False)
+            question_instance.quiz = quiz
+            if not question_instance.order:
+                question_instance.order = quiz.questions.count() + 1
+            question_instance.save()
+
+        if posted_qtype == "mcq":
+            if question_instance:
+                formset = ChoiceFormSetClass(post, instance=question_instance, prefix=prefix)
+            else:
+                formset = ChoiceFormSetClass(post, prefix=prefix)
+        else:
+            formset = None
+
+        if qform_is_valid:
+            if posted_qtype == "mcq":
                 if formset.is_valid():
                     formset.save()
                     return redirect("create_quiz:quiz_detail", pk=quiz.pk)
                 else:
-                    # formset invalid -> render form with errors (question already saved; consider rollback)
-                    # optionally delete q to keep DB clean when invalid choices
-                    q.delete()
+                    for err in formset.non_form_errors():
+                        qform.add_error(None, err)
+                    return render(request, "create_quiz/question_form.html", {
+                        "form": qform,
+                        "quiz": quiz,
+                        "formset": formset,
+                        "is_new": True,
+                    })
             else:
-                # short answer: no choice formset to process
                 return redirect("create_quiz:quiz_detail", pk=quiz.pk)
-        # fallthrough: qform invalid OR formset invalid -> render form with errors
-        # Note: if q was saved and then deleted above on formset invalid, we need to re-create qform for render
-        return render(request, "create_quiz/question_form.html", {
-            "form": qform,
-            "quiz": quiz,
-            "formset": locals().get("formset", None),
-            "is_new": True,
-        })
+        else:
+            if posted_qtype == "mcq":
+                formset = ChoiceFormSetClass(post, prefix=prefix)
+                for err in formset.non_form_errors():
+                    qform.add_error(None, err)
+            else:
+                formset = None
 
-    # GET
+            return render(request, "create_quiz/question_form.html", {
+                "form": qform,
+                "quiz": quiz,
+                "formset": formset,
+                "is_new": True,
+            })
+
     initial_order = quiz.questions.count() + 1
     qform = QuestionForm(initial={"order": initial_order, "qtype": "short"})
-    ChoiceFormSet = make_choice_formset(extra=1, can_delete=True)
-    formset = ChoiceFormSet()
+    formset = ChoiceFormSetClass(prefix=prefix)
     return render(request, "create_quiz/question_form.html", {
         "form": qform,
         "quiz": quiz,
@@ -123,13 +148,15 @@ def add_question(request, quiz_id):
 @login_required
 def edit_question(request, pk):
     question = get_object_or_404(Question, pk=pk, quiz__creator=request.user)
+    ChoiceFormSetClass = make_choice_formset(extra=0, can_delete=True)
+    prefix = "choice_set"
 
     if request.method == "POST":
         form = QuestionForm(request.POST, instance=question)
         qtype = request.POST.get("qtype") or question.qtype
+
         if qtype == "mcq":
-            ChoiceFormSet = make_choice_formset(extra=0, can_delete=True)
-            formset = ChoiceFormSet(request.POST, instance=question)
+            formset = ChoiceFormSetClass(request.POST, instance=question, prefix=prefix)
             formset._parent_qtype = "mcq"
         else:
             formset = None
@@ -139,16 +166,21 @@ def edit_question(request, pk):
             if formset:
                 formset.save()
             return redirect("create_quiz:quiz_detail", pk=question.quiz.pk)
-    else:
-        form = QuestionForm(instance=question)
-        # only prepare formset when editing MCQ
-        if question.qtype == "mcq":
-            ChoiceFormSet = make_choice_formset(extra=0, can_delete=True)
-            formset = ChoiceFormSet(instance=question)
         else:
-            # render no choice forms for short-answer
-            ChoiceFormSet = make_choice_formset(extra=0, can_delete=True)
-            formset = None
+            if qtype == "mcq" and not formset:
+                formset = ChoiceFormSetClass(request.POST, prefix=prefix)
+            return render(request, "create_quiz/question_form.html", {
+                "form": form,
+                "formset": formset,
+                "question": question,
+                "is_new": False,
+            })
+
+    form = QuestionForm(instance=question)
+    if question.qtype == "mcq":
+        formset = ChoiceFormSetClass(instance=question, prefix=prefix)
+    else:
+        formset = None
 
     return render(request, "create_quiz/question_form.html", {
         "form": form,
@@ -156,6 +188,7 @@ def edit_question(request, pk):
         "question": question,
         "is_new": False,
     })
+
 
 
 @login_required
@@ -166,7 +199,6 @@ def toggle_publish(request, pk):
 	return redirect("create_quiz:quiz_detail", pk=pk)
 
 
-# --- เพิ่ม endpoint สำหรับ reorder ---
 @login_required
 @require_POST
 def reorder_questions(request, quiz_id):
@@ -184,12 +216,10 @@ def reorder_questions(request, quiz_id):
     except Exception:
         return JsonResponse({"ok": False, "error": "invalid json"}, status=400)
 
-    # validate that provided ids belong to this quiz
     q_ids = list(quiz.questions.values_list("id", flat=True))
     if set(new_order) - set(q_ids):
         return JsonResponse({"ok": False, "error": "invalid question ids"}, status=400)
 
-    # update orders in a transaction
     from django.db import transaction
     with transaction.atomic():
         for idx, qid in enumerate(new_order, start=1):

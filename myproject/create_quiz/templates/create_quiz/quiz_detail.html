@@ -41,11 +41,8 @@
 </div>
 
 <script>
-/* Full client JS: drag/drop, collect order, POST JSON with CSRF from cookie,
-   handle server response and redirect to quiz list on success. */
 
 (function(){
-  // Helper to get CSRF token from cookie (Django recommended)
   function getCookie(name) {
     const value = `; ${document.cookie}`;
     const parts = value.split(`; ${name}=`);
@@ -54,7 +51,6 @@
   }
   const csrftoken = getCookie('csrftoken');
 
-  // Elements
   const list = document.getElementById('questions-list');
   const saveBtn = document.getElementById('save-order-btn');
   const statusEl = document.getElementById('save-status');
@@ -64,7 +60,6 @@
     return;
   }
 
-  // Drag & Drop handlers
   let dragEl = null;
 
   function onDragStart(e){
@@ -90,7 +85,6 @@
     }
   }
 
-  // attach events to current items
   function attachDragEvents() {
     const items = list.querySelectorAll('.list-group-item');
     items.forEach(item=>{
@@ -102,17 +96,14 @@
   }
   attachDragEvents();
 
-  // collect current order: array of ints
   function collectOrder(){
     const items = Array.from(list.querySelectorAll('.list-group-item'));
     return items.map(it => parseInt(it.dataset.qid, 10));
   }
 
-  // POST JSON to reorder endpoint, handle response
   saveBtn.addEventListener('click', function(){
     statusEl.innerText = 'Saving...';
     const order = collectOrder();
-    // Endpoint URL: use Django URL name with template tag
     const url = "{% url 'create_quiz:reorder_questions' quiz.pk %}";
 
     fetch(url, {
@@ -125,11 +116,9 @@
     }).then(async res => {
       if(res.ok){
         statusEl.innerText = 'Saved. Redirecting...';
-        // redirect back to quiz list after short delay
         setTimeout(()=> window.location.href = "{% url 'create_quiz:quiz_list' %}", 400);
         return;
       }
-      // not ok -> try read body for error
       let txt = await res.text();
       console.error('Reorder failed', res.status, txt);
       try {

@@ -10,15 +10,13 @@ class QuizForm(forms.ModelForm):
         fields = ["title", "description", "time_limit_minutes"]
 
 class QuestionForm(forms.ModelForm):
-    # override to remove empty choice and set default
     qtype = forms.ChoiceField(choices=QTYPE_CHOICES, initial="short", required=True)
 
     class Meta:
         model = Question
-        # keep order in model but we won't render it on edit page
         fields = ["text", "qtype", "order"]
         widgets = {
-            "order": forms.HiddenInput(),  # hide by default; we'll set when creating
+            "order": forms.HiddenInput(),
         }
 
 class BaseChoiceInlineFormSet(BaseInlineFormSet):
@@ -31,23 +29,24 @@ class BaseChoiceInlineFormSet(BaseInlineFormSet):
                 continue
             text = form.cleaned_data.get("text")
             is_correct = form.cleaned_data.get("is_correct", False)
-            if text in (None, ""):
+            if not text:
                 continue
             choices.append(text)
             if is_correct:
                 correct_count += 1
 
         qtype = None
-        if hasattr(self.instance, "qtype") and self.instance.qtype:
+        if hasattr(self.instance, "qtype") and getattr(self.instance, "qtype", None):
             qtype = self.instance.qtype
         else:
             qtype = getattr(self, "_parent_qtype", None)
 
         if qtype == "mcq":
             if len(choices) < 2:
-                raise forms.ValidationError("Multiple-choice question must have at least 2 choices.")
-            if correct_count < 1:
-                raise forms.ValidationError("At least one choice must be marked correct for multiple-choice questions.")
+                raise forms.ValidationError("at least 2 choices")
+            if correct_count != 1:
+                raise forms.ValidationError("exactly one choice must be marked correct")
+
 
 def make_choice_formset(extra=0, can_delete=True):
     return inlineformset_factory(

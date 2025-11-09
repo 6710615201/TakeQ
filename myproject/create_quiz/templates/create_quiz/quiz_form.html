@@ -61,7 +61,6 @@
   const wrapper = document.getElementById('time-limit-wrapper');
   const controls = document.getElementById('time-limit-controls');
 
-  // The real hidden input rendered by Django
   const realInput = document.querySelector('input[name="{{ form.time_limit_minutes.html_name }}"]');
 
   function makeBlock(value){
