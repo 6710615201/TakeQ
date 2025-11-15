@@ -1,22 +1,44 @@
 {% extends 'base.html' %}
+
 {% block content %}
-<h2>Room: {{ room.name }} ({{ room.code }})</h2>
-<p>{{ room.description }}</p>
-<p>Owner: {{ room.owner }}</p>
-<h3>Members</h3>
-<ul>
-{% for m in members %}
-	<li>{{ m.user }} — {{ m.role }}</li>
-{% empty %}
-	<li>No members</li>
-{% endfor %}
-</ul>
-<h3>Assignments</h3>
-<ul>
-{% for a in assignments %}
-	<li>{{ a.quiz.title }} — assigned at {{ a.assigned_at }}</li>
-{% empty %}
-	<li>No quizzes assigned</li>
-{% endfor %}
-</ul>
+	<div class="d-flex justify-content-between align-items-center mb-3">
+		<h2>Room: {{ room.name }} ({{ room.code }})</h2>
+
+		{% if request.user == room.owner %}
+		<div>
+			<form method="post"
+				action="{% url 'room:delete' room.code %}"
+				onsubmit="return confirm('Delete this room? This action cannot be undone.');"
+				style="display:inline;">
+				{% csrf_token %}
+				<button type="submit" class="btn btn-danger btn-sm">
+					ลบห้อง
+				</button>
+			</form>
+		</div>
+		{% endif %}
+	</div>
+
+
+	<p>{{ room.description }}</p>
+
+	<p>Owner: {{ room.owner }}</p>
+
+	<h3>Members</h3>
+	<ul>
+	{% for m in members %}
+		<li>{{ m.user }} — {{ m.role }}</li>
+	{% empty %}
+		<li>No members</li>
+	{% endfor %}
+	</ul>
+	
+	<h3>Assignments</h3>
+	<ul>
+	{% for a in assignments %}
+		<li>{{ a.quiz.title }} — assigned at {{ a.assigned_at }}</li>
+	{% empty %}
+		<li>No quizzes assigned</li>
+	{% endfor %}
+	</ul>
 {% endblock %}

@@ -11,4 +11,5 @@ urlpatterns = [
 	path('invitations/', views.InvitationsListView.as_view(), name='invitations'),
 	path('invitation/<int:pk>/<str:action>/', views.InvitationResponseView.as_view(), name='invitation_response'),
 	path('assign_quiz/<str:code>/', views.AssignQuizToRoomView.as_view(), name='assign_quiz'),
+    path('detail/<str:code>/delete/', views.DeleteRoomView.as_view(), name='delete'),
 ]

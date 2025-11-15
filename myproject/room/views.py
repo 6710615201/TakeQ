@@ -120,3 +120,12 @@ class AssignQuizToRoomView(LoginRequiredMixin, View):
 			return redirect('room:detail', code=room.code)
 		RoomQuizAssignment.objects.get_or_create(room=room, quiz=quiz, defaults={'assigned_by': request.user})
 		return redirect('room:detail', code=room.code)
+	
+class DeleteRoomView(LoginRequiredMixin, View):
+    def post(self, request, code):
+        room = get_object_or_404(Room, code=code)
+        if room.owner != request.user:
+            return HttpResponseForbidden()
+        room.delete()
+        messages.success(request, 'Room deleted.')
+        return redirect('/')  
