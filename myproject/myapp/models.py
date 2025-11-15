@@ -35,6 +35,10 @@ class Attempt(models.Model):
     finished_at = models.DateTimeField(null=True, blank=True)
     score = models.FloatField(null=True, blank=True)
 
+    # room linkage (nullable)
+    room = models.ForeignKey('room.Room', null=True, blank=True, on_delete=models.SET_NULL)
+    room_membership = models.ForeignKey('room.RoomMembership', null=True, blank=True, on_delete=models.SET_NULL)
+
 class Answer(models.Model):
     attempt = models.ForeignKey(Attempt, on_delete=models.CASCADE, related_name="answers")
     question = models.ForeignKey(Question, on_delete=models.CASCADE)

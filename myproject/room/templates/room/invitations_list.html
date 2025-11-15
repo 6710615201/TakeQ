@@ -1,0 +1,20 @@
+{% extends 'base.html' %}
+{% block content %}
+<h2>Your Room Invitations</h2>
+<ul>
+{% for inv in invitations %}
+	<li>{{ inv.room }} — role: {{ inv.role }} — status: {{ inv.status }}
+	{% if inv.status == 'pending' %}
+		<form method="post" action="{% url 'room:invitation_response' inv.id 'accept' %}">{% csrf_token %}
+			<button type="submit">Accept</button>
+		</form>
+		<form method="post" action="{% url 'room:invitation_response' inv.id 'decline' %}">{% csrf_token %}
+			<button type="submit">Decline</button>
+		</form>
+	{% endif %}
+	</li>
+{% empty %}
+	<li>No invitations</li>
+{% endfor %}
+</ul>
+{% endblock %}

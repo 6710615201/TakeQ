@@ -1,0 +1,22 @@
+{% extends 'base.html' %}
+{% block content %}
+<h2>Room: {{ room.name }} ({{ room.code }})</h2>
+<p>{{ room.description }}</p>
+<p>Owner: {{ room.owner }}</p>
+<h3>Members</h3>
+<ul>
+{% for m in members %}
+	<li>{{ m.user }} — {{ m.role }}</li>
+{% empty %}
+	<li>No members</li>
+{% endfor %}
+</ul>
+<h3>Assignments</h3>
+<ul>
+{% for a in assignments %}
+	<li>{{ a.quiz.title }} — assigned at {{ a.assigned_at }}</li>
+{% empty %}
+	<li>No quizzes assigned</li>
+{% endfor %}
+</ul>
+{% endblock %}

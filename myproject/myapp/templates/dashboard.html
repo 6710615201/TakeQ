@@ -6,7 +6,42 @@
 
 {% block content %}
 <div class="py-4">
-  <h2>Dashboard</h2>
+  <div class="d-flex justify-content-between align-items-center">
+    <h2>Dashboard</h2>
+    <div>
+      <a class="btn btn-primary btn-sm" href="{% url 'room:create' %}">สร้างห้องใหม่</a>
+      <button class="btn btn-secondary btn-sm" data-bs-toggle="modal" data-bs-target="#joinRoomModal">เข้าร่วมห้องด้วยรหัส</button>
+    </div>
+  </div>
+
+  <hr/>
+
+  <h4>ห้องที่คุณเป็นเจ้าของ</h4>
+  <div class="list-group mb-3">
+    {% for r in owner_rooms %}
+      <a class="list-group-item list-group-item-action" href="{% url 'room:detail' r.code %}">{{ r.name }} ({{ r.code }})</a>
+    {% empty %}
+      <div class="list-group-item">ไม่มี</div>
+    {% endfor %}
+  </div>
+
+  <h4>ห้องที่คุณเป็นผู้ดูแล</h4>
+  <div class="list-group mb-3">
+    {% for r in admin_rooms %}
+      <a class="list-group-item list-group-item-action" href="{% url 'room:detail' r.code %}">{{ r.name }} ({{ r.code }})</a>
+    {% empty %}
+      <div class="list-group-item">ไม่มี</div>
+    {% endfor %}
+  </div>
+
+  <h4>ห้องที่คุณเป็นนักเรียน</h4>
+  <div class="list-group mb-3">
+    {% for r in student_rooms %}
+      <a class="list-group-item list-group-item-action" href="{% url 'room:detail' r.code %}">{{ r.name }} ({{ r.code }})</a>
+    {% empty %}
+      <div class="list-group-item">ไม่มี</div>
+    {% endfor %}
+  </div>
 
 </div>
 {% endblock %}
