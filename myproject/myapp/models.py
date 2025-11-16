@@ -40,7 +40,13 @@ class Attempt(models.Model):
     room_membership = models.ForeignKey('room.RoomMembership', null=True, blank=True, on_delete=models.SET_NULL)
 
 class Answer(models.Model):
-    attempt = models.ForeignKey(Attempt, on_delete=models.CASCADE, related_name="answers")
+    attempt = models.ForeignKey(
+        Attempt,
+        on_delete=models.CASCADE,
+        related_name="answers",
+        null=True,      
+        blank=True,    
+    )
     question = models.ForeignKey(Question, on_delete=models.CASCADE)
     selected_choice = models.ForeignKey(Choice, on_delete=models.SET_NULL, null=True, blank=True)
     text = models.TextField(blank=True)
