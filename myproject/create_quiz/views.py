@@ -9,7 +9,7 @@ from .forms import QuizForm, QuestionForm, make_choice_formset
 from django.http import JsonResponse, HttpResponseForbidden
 from django.views.decorators.http import require_POST
 from django.contrib.auth.decorators import login_required
-
+from room.models import RoomQuizAssignment, RoomMembership
 
 @method_decorator(login_required, name="dispatch")
 class QuizListView(ListView):
@@ -196,10 +196,36 @@ def edit_question(request, pk):
 
 @login_required
 def toggle_publish(request, pk):
-	quiz = get_object_or_404(Quiz, pk=pk, creator=request.user)
-	quiz.is_published = not quiz.is_published
-	quiz.save()
-	return redirect("create_quiz:quiz_detail", pk=pk)
+    if request.method != "POST":
+        return HttpResponseForbidden()
+
+    quiz = get_object_or_404(Quiz, pk=pk)
+
+    if quiz.creator == request.user:
+        allowed = True
+    else:
+        assignments = RoomQuizAssignment.objects.filter(quiz=quiz).select_related('room')
+        allowed = False
+        for assign in assignments:
+            room = assign.room
+            try:
+                membership = RoomMembership.objects.get(user=request.user, room=room)
+                if membership.role in (RoomMembership.ROLE_OWNER, RoomMembership.ROLE_ADMIN):
+                    allowed = True
+                    break
+            except RoomMembership.DoesNotExist:
+                continue
+
+    if not allowed:
+        return HttpResponseForbidden()
+
+    quiz.is_published = not quiz.is_published
+    quiz.save()
+
+    next_url = request.POST.get('next') or request.GET.get('next') or request.META.get('HTTP_REFERER')
+    if next_url:
+        return redirect(next_url)
+    return redirect("create_quiz:quiz_detail", pk=pk)
 
 
 @login_required

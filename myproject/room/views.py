@@ -6,6 +6,7 @@ from .models import Room, RoomMembership, RoomInvitation, RoomQuizAssignment
 from .forms import RoomCreateForm, JoinRoomByCodeForm, InviteForm
 from django.contrib import messages
 from django.contrib.auth import get_user_model
+from myapp.models import Quiz
 
 User = get_user_model()
 
@@ -32,12 +33,31 @@ class CreateRoomView(LoginRequiredMixin, View):
 		return render(request, 'room/create_room.html', {'form': form})
 
 class RoomDetailView(LoginRequiredMixin, View):
-	def get(self, request, code):
-		room = get_object_or_404(Room, code=code)
-		role = user_role_in_room(request.user, room)
-		members = room.memberships.select_related('user').all()
-		assignments = room.assignments.select_related('quiz').all()
-		return render(request, 'room/detail.html', {'room': room, 'role': role, 'members': members, 'assignments': assignments})
+    def get(self, request, code):
+        room = get_object_or_404(Room, code=code)
+        role = user_role_in_room(request.user, room)
+        members = room.memberships.select_related('user').all()
+        assignments = room.assignments.select_related('quiz').all()  
+
+        assigned_quizzes = [a.quiz for a in assignments]
+
+        owner_quizzes = []
+        if role in (RoomMembership.ROLE_OWNER, RoomMembership.ROLE_ADMIN):
+            owner_quizzes_qs = Quiz.objects.filter(creator=request.user).order_by('-created_at')
+            assigned_ids = [q.pk for q in assigned_quizzes]
+            owner_quizzes = owner_quizzes_qs.exclude(pk__in=assigned_ids)
+
+        visible_assigned_for_students = [q for q in assigned_quizzes if q.is_published]
+
+        return render(request, 'room/detail.html', {
+            'room': room,
+            'role': role,
+            'members': members,
+            'assignments': assignments,
+            'assigned_quizzes': assigned_quizzes,
+            'owner_quizzes': owner_quizzes,
+            'visible_assigned_for_students': visible_assigned_for_students,
+        })
 
 class JoinByCodeView(LoginRequiredMixin, View):
 	def post(self, request):
@@ -110,7 +130,7 @@ class AssignQuizToRoomView(LoginRequiredMixin, View):
 	def post(self, request, code):
 		room = get_object_or_404(Room, code=code)
 		role = user_role_in_room(request.user, room)
-		if role != RoomMembership.ROLE_OWNER:
+		if role not in (RoomMembership.ROLE_OWNER, RoomMembership.ROLE_ADMIN):
 			return HttpResponseForbidden()
 		quiz_id = int(request.POST.get('quiz_id'))
 		from myapp.models import Quiz
