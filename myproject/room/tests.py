@@ -1,4 +1,3 @@
-# room/tests/test_room_behaviour.py
 from django.test import TestCase
 from django.urls import reverse
 from django.contrib.auth import get_user_model
@@ -70,7 +69,7 @@ class RoomAppBehaviorTests(TestCase):
         self.assertIn(resp.status_code, (200, 302))
         self.quiz.refresh_from_db()
         self.assertFalse(self.quiz.is_published)
-
+  
     def test_non_member_cannot_toggle_publish(self):
         rand = User.objects.create_user(username='rand', password='pw')
         self.client.force_login(rand)
