@@ -22,16 +22,19 @@ class QuizListView(ListView):
 
 @method_decorator(login_required, name="dispatch")
 class QuizCreateView(CreateView):
-	model = Quiz
-	form_class = QuizForm
-	template_name = "create_quiz/quiz_form.html"
+    model = Quiz
+    form_class = QuizForm
+    template_name = "create_quiz/quiz_form.html"
 
-	def form_valid(self, form):
-		obj = form.save(commit=False)
-		obj.creator = self.request.user
-		obj.is_published = False
-		obj.save()
-		return redirect("create_quiz:quiz_detail", pk=obj.pk)
+    def form_valid(self, form):
+        obj = form.save(commit=False)
+        obj.creator = self.request.user
+        obj.is_published = False
+        obj.save()
+        next_url = self.request.GET.get('next') or self.request.POST.get('next')
+        if next_url:
+            return redirect(next_url)
+        return redirect("create_quiz:quiz_detail", pk=obj.pk)
 
 @method_decorator(login_required, name="dispatch")
 class QuizUpdateView(UpdateView):
