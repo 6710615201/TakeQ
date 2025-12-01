@@ -107,13 +107,22 @@
               </div>
               <div class="modal-body">
                 <div class="mb-3">
-                  <label class="form-label">Username or email</label>
+                  <label class="form-label">Username or Email</label>
                   {{ invite_form.username }}
                 </div>
                 <div class="mb-3">
-                  <label class="form-label">Role</label>
-                  {{ invite_form.role }}
-                  <div class="form-text">Owner can invite Admin or Member. Admin can invite Member only.</div>
+                <label class="form-label fw-semibold">Role</label>
+                <select name="{{ invite_form.role.name }}" class="form-select">
+                    {% for value, label in invite_form.role.field.choices %}
+                    <option value="{{ value }}">{{ label }}</option>
+                    {% endfor %}
+                </select>
+                <div class="form-text mt-1">
+                    <span class="text-muted">
+                    Owner can invite <strong>Admin</strong> or <strong>Member</strong>.
+                    Admin can invite <strong>Member</strong> only.
+                    </span>
+                </div>
                 </div>
               </div>
               <div class="modal-footer">

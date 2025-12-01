@@ -7,6 +7,7 @@ from .forms import RoomCreateForm, JoinRoomByCodeForm, InviteForm
 from django.contrib import messages
 from django.contrib.auth import get_user_model
 from myapp.models import Quiz
+from django.utils import timezone
 
 User = get_user_model()
 
@@ -103,10 +104,16 @@ class InviteUserView(LoginRequiredMixin, View):
             messages.info(request, 'User already a member')
             return redirect('room:detail', code=room.code)
 
-        inv, created = RoomInvitation.objects.get_or_create(
+        inv, created = RoomInvitation.objects.update_or_create(
             room=room,
             invited_user=target,
-            defaults={'invited_by': request.user, 'role': invite_role}
+            defaults={
+                'invited_by': request.user,
+                'role': invite_role,
+                'status': 'pending',
+                'message': form.cleaned_data.get('message', '') if hasattr(form, 'cleaned_data') else '',
+                'created_at': timezone.localtime(timezone.now()),   
+            }
         )
 
         if created:
@@ -214,10 +221,16 @@ class ManageMembersView(LoginRequiredMixin, View):
             return redirect('room:manage_members', code=room.code)
 
 
-        inv, created = RoomInvitation.objects.get_or_create(
+        inv, created = RoomInvitation.objects.update_or_create(
             room=room,
             invited_user=target,
-            defaults={'invited_by': request.user, 'role': invite_role}
+            defaults={
+                'invited_by': request.user,
+                'role': invite_role,
+                'status': 'pending',
+                'message': form.cleaned_data.get('message', '') if hasattr(form, 'cleaned_data') else '',
+                'created_at': timezone.localtime(timezone.now()),  
+            }
         )
 
         if created:
