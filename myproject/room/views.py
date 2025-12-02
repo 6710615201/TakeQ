@@ -38,17 +38,17 @@ class RoomDetailView(LoginRequiredMixin, View):
         room = get_object_or_404(Room, code=code)
         role = user_role_in_room(request.user, room)
         members = room.memberships.select_related('user').all()
-        assignments = room.assignments.select_related('quiz').all()  
+        assignments = room.assignments.select_related('quiz').all()
 
-        assigned_quizzes = [a.quiz for a in assignments]
+        assigned_ids = list(assignments.values_list('quiz_id', flat=True))
+
+        assigned_quizzes = Quiz.objects.filter(pk__in=assigned_ids).select_related('creator').order_by('-created_at')
 
         owner_quizzes = []
         if role in (RoomMembership.ROLE_OWNER, RoomMembership.ROLE_ADMIN):
-            owner_quizzes_qs = Quiz.objects.filter(creator=request.user).order_by('-created_at')
-            assigned_ids = [q.pk for q in assigned_quizzes]
-            owner_quizzes = owner_quizzes_qs.exclude(pk__in=assigned_ids)
+            owner_quizzes = Quiz.objects.filter(creator=request.user).exclude(pk__in=assigned_ids).order_by('-created_at')
 
-        visible_assigned_for_students = [q for q in assigned_quizzes if q.is_published]
+        visible_assigned_for_students = assigned_quizzes.filter(is_published=True) if not (role in (RoomMembership.ROLE_OWNER, RoomMembership.ROLE_ADMIN)) else assigned_quizzes
 
         return render(request, 'room/detail.html', {
             'room': room,
