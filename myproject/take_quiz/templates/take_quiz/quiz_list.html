@@ -11,16 +11,16 @@
         <h5>{{ quiz.title }}</h5>
         <p class="mb-1">{{ quiz.description|truncatechars:120 }}</p>
         <small>
-          {% if quiz.creator %}
-            By {{ quiz.creator.username }}
-          {% else %}
-            By (unknown)
-          {% endif %}
+          {% if quiz.creator %}By {{ quiz.creator.username }}{% else %}By (unknown){% endif %}
            • {{ quiz.created_at|date:"Y-m-d" }}
         </small>
       </div>
       <div>
-        <a class="btn btn-primary" href="{% url 'take_quiz:start_quiz' quiz.id %}">Start</a>
+        {% if quiz.id in attempted_quiz_ids %}
+          <button class="btn btn-secondary" disabled>Already taken</button>
+        {% else %}
+          <a class="btn btn-primary" href="{% url 'take_quiz:start_quiz' quiz.id %}">Start</a>
+        {% endif %}
       </div>
     </div>
   {% empty %}
