@@ -1,13 +1,12 @@
 from django.shortcuts import render, get_object_or_404, redirect
 from django.urls import reverse
-from django.views import View
 from django.views.generic import ListView
 from django.utils import timezone
 from django.contrib.auth.decorators import login_required
 from django.utils.decorators import method_decorator
-from myapp.models import Quiz, Question, Choice, Attempt, Answer
-
-from django.db import transaction
+from myapp.models import Quiz, Choice, Attempt, Answer
+from django.contrib import messages
+from django.db import transaction, IntegrityError
 
 @method_decorator(login_required, name='dispatch')
 class QuizListView(ListView):
@@ -18,12 +17,36 @@ class QuizListView(ListView):
     def get_queryset(self):
         return Quiz.objects.filter(is_published=True).order_by("-created_at")
 
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        if self.request.user.is_authenticated:
+            attempted_quiz_ids = list(
+                Attempt.objects.filter(taker=self.request.user).values_list('quiz_id', flat=True)
+            )
+        else:
+            attempted_quiz_ids = []
+        ctx['attempted_quiz_ids'] = attempted_quiz_ids
+        return ctx
+
 
 @login_required
 def start_quiz(request, quiz_id):
     quiz = get_object_or_404(Quiz, pk=quiz_id, is_published=True)
-    attempt = Attempt.objects.create(quiz=quiz, taker=request.user, started_at=timezone.now())
-    return redirect(reverse("take_quiz:take_quiz", args=[quiz.id, attempt.id]))
+
+    room_code = request.GET.get("room") or request.POST.get("room")
+    
+    existing = Attempt.objects.filter(quiz=quiz, taker=request.user).first()
+    if existing:
+        return redirect("take_quiz:attempt_result", attempt_id=existing.id)
+
+    attempt = Attempt.objects.create(
+        quiz=quiz,
+        taker=request.user,
+        started_at=timezone.now(),
+        room_code=room_code
+    )
+
+    return redirect("take_quiz:take_quiz", quiz_id=quiz.id, attempt_id=attempt.id)
 
 
 @login_required
