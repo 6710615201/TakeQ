@@ -33,6 +33,14 @@ class QuestionForm(forms.ModelForm):
             "order": forms.HiddenInput(),
         }
 
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        for name, field in self.fields.items():
+            if isinstance(field.widget, forms.Textarea):
+                field.widget.attrs.update({'class': 'form-control', 'rows': 3})
+            else:
+                field.widget.attrs.update({'class': 'form-control'})
+
 class BaseChoiceInlineFormSet(BaseInlineFormSet):
     def clean(self):
         super().clean()

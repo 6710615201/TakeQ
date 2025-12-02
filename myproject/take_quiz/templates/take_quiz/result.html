@@ -32,7 +32,7 @@
     </li>
   {% endfor %}
 </ul>
-
+<hr>
 {% if attempt.room_code %}
     <a href="{% url 'room:detail' attempt.room_code %}" class="btn btn-secondary">Back to room</a>
 {% else %}

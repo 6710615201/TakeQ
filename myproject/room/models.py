@@ -59,6 +59,7 @@ class RoomInvitation(models.Model):
 	status = models.CharField(max_length=10, choices=STATUS_CHOICES, default=STATUS_PENDING)
 	created_at = models.DateTimeField(default=timezone.now)
 	responded_at = models.DateTimeField(null=True, blank=True)
+	message = models.TextField(blank=True, default='')
 
 	class Meta:
 		unique_together = ('room', 'invited_user')
