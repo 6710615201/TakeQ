@@ -6,10 +6,33 @@ from django.utils.decorators import method_decorator
 from django.contrib.auth.mixins import LoginRequiredMixin, UserPassesTestMixin
 from myapp.models import Quiz, Question, Choice
 from .forms import QuizForm, QuestionForm, make_choice_formset
-from django.http import JsonResponse, HttpResponseForbidden
+from django.http import JsonResponse, HttpResponseForbidden, Http404
 from django.views.decorators.http import require_POST
-from django.contrib.auth.decorators import login_required
 from room.models import RoomQuizAssignment, RoomMembership
+from django.contrib.auth import get_user_model
+from django.apps import apps
+
+User = get_user_model()
+
+RoomQuizAssignment = apps.get_model('room', 'RoomQuizAssignment')
+RoomMembership     = apps.get_model('room', 'RoomMembership')
+
+def user_is_room_owner_or_admin_for_quiz(user, quiz):
+    room_ids = list(RoomQuizAssignment.objects.filter(quiz=quiz).values_list('room_id', flat=True))
+    if not room_ids:
+        return False
+
+    allowed_roles = [
+        getattr(RoomMembership, 'ROLE_OWNER', 'owner'),
+        getattr(RoomMembership, 'ROLE_ADMIN',  'admin'),
+        'owner', 'admin'
+    ]
+
+    return RoomMembership.objects.filter(
+        user=user,
+        room_id__in=room_ids,
+        role__in=allowed_roles
+    ).exists()
 
 @method_decorator(login_required, name="dispatch")
 class QuizListView(ListView):
@@ -42,21 +65,29 @@ class QuizUpdateView(UpdateView):
     form_class = QuizForm
     template_name = "create_quiz/quiz_form.html"
 
-    def get_queryset(self):
-        return Quiz.objects.filter(creator=self.request.user)
+    def get_object(self, queryset=None):
+        pk = self.kwargs.get('pk')
+        quiz = get_object_or_404(Quiz, pk=pk)
+        if not (quiz.creator == self.request.user or user_is_room_owner_or_admin_for_quiz(self.request.user, quiz)):
+            raise Http404("No quiz found matching the query")
+        return quiz
 
     def get_success_url(self):
         return reverse("create_quiz:quiz_detail", args=[self.object.pk])
 
 @method_decorator(login_required, name="dispatch")
 class QuizDetailView(DetailView):
-	model = Quiz
-	template_name = "create_quiz/quiz_detail.html"
-	context_object_name = "quiz"
+    model = Quiz
+    template_name = "create_quiz/quiz_detail.html"
+    context_object_name = "quiz"
 
-	def get_queryset(self):
-		return Quiz.objects.filter(creator=self.request.user)
-     
+    def get_object(self, queryset=None):
+        pk = self.kwargs.get('pk')
+        quiz = get_object_or_404(Quiz, pk=pk)
+        if not (quiz.creator == self.request.user or user_is_room_owner_or_admin_for_quiz(self.request.user, quiz)):
+            raise Http404("No quiz found matching the query")
+        return quiz
+
 class QuizDeleteView(LoginRequiredMixin, UserPassesTestMixin, DeleteView):
     model = Quiz
     template_name = "create_quiz/quiz_confirm_delete.html"
@@ -75,7 +106,10 @@ def add_question(request, quiz_id):
     - always use prefix "choice_set" for Choice formset binding
     - when formset invalid, attach formset.non_form_errors into qform non-field errors for reliable display
     """
-    quiz = get_object_or_404(Quiz, pk=quiz_id, creator=request.user)
+    quiz = get_object_or_404(Quiz, pk=quiz_id)
+    if not (quiz.creator == request.user or user_is_room_owner_or_admin_for_quiz(request.user, quiz)):
+        return HttpResponseForbidden()
+
     ChoiceFormSetClass = make_choice_formset(extra=1, can_delete=True)
     prefix = "choice_set"
 
@@ -150,7 +184,11 @@ def add_question(request, quiz_id):
 
 @login_required
 def edit_question(request, pk):
-    question = get_object_or_404(Question, pk=pk, quiz__creator=request.user)
+    question = get_object_or_404(Question, pk=pk)
+    quiz = question.quiz
+    if not (quiz.creator == request.user or user_is_room_owner_or_admin_for_quiz(request.user, quiz)):
+        return HttpResponseForbidden()
+
     ChoiceFormSetClass = make_choice_formset(extra=0, can_delete=True)
     prefix = "choice_set"
 
@@ -236,7 +274,10 @@ def reorder_questions(request, quiz_id):
     Only quiz.creator can reorder.
     """
     import json
-    quiz = get_object_or_404(Quiz, pk=quiz_id, creator=request.user)
+    quiz = get_object_or_404(Quiz, pk=quiz_id)
+    if not (quiz.creator == request.user or user_is_room_owner_or_admin_for_quiz(request.user, quiz)):
+        return JsonResponse({"ok": False, "error": "forbidden"}, status=403)
+
     try:
         payload = json.loads(request.body.decode("utf-8"))
         new_order = payload.get("order", [])

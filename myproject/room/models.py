@@ -1,7 +1,7 @@
 from django.db import models
 from django.utils import timezone
 from django.contrib.auth import get_user_model
-from django.apps import apps
+from django.conf import settings
 
 User = get_user_model()
 
@@ -59,6 +59,7 @@ class RoomInvitation(models.Model):
 	status = models.CharField(max_length=10, choices=STATUS_CHOICES, default=STATUS_PENDING)
 	created_at = models.DateTimeField(default=timezone.now)
 	responded_at = models.DateTimeField(null=True, blank=True)
+	message = models.TextField(blank=True, default='')
 
 	class Meta:
 		unique_together = ('room', 'invited_user')
@@ -94,3 +95,18 @@ class RoomQuizAssignment(models.Model):
         quiz_title = getattr(self.quiz, 'title', f'#{getattr(self.quiz, "pk", "unknown")}')
         return f"Quiz {quiz_title} assigned to {self.room}"
 
+class Submission(models.Model):
+    assignment = models.ForeignKey(
+		"room.RoomQuizAssignment",
+		on_delete=models.CASCADE,
+		related_name="submissions"
+	)
+    student = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
+    created_at = models.DateTimeField(auto_now_add=True)
+    total_score = models.FloatField(null=True, blank=True)
+    graded = models.BooleanField(default=False)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=('assignment', 'student'), name='unique_submission_per_assignment_student')
+        ]

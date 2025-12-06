@@ -1,13 +1,14 @@
 from django.shortcuts import render, get_object_or_404, redirect
 from django.urls import reverse
-from django.views import View
 from django.views.generic import ListView
 from django.utils import timezone
 from django.contrib.auth.decorators import login_required
 from django.utils.decorators import method_decorator
-from myapp.models import Quiz, Question, Choice, Attempt, Answer
-
-from django.db import transaction
+from myapp.models import Quiz, Choice, Attempt, Answer
+from django.contrib import messages
+from django.db import transaction, IntegrityError
+from datetime import timedelta
+from django.http import HttpResponseForbidden
 
 @method_decorator(login_required, name='dispatch')
 class QuizListView(ListView):
@@ -18,12 +19,36 @@ class QuizListView(ListView):
     def get_queryset(self):
         return Quiz.objects.filter(is_published=True).order_by("-created_at")
 
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        if self.request.user.is_authenticated:
+            attempted_quiz_ids = list(
+                Attempt.objects.filter(taker=self.request.user).values_list('quiz_id', flat=True)
+            )
+        else:
+            attempted_quiz_ids = []
+        ctx['attempted_quiz_ids'] = attempted_quiz_ids
+        return ctx
+
 
 @login_required
 def start_quiz(request, quiz_id):
     quiz = get_object_or_404(Quiz, pk=quiz_id, is_published=True)
-    attempt = Attempt.objects.create(quiz=quiz, taker=request.user, started_at=timezone.now())
-    return redirect(reverse("take_quiz:take_quiz", args=[quiz.id, attempt.id]))
+
+    room_code = request.GET.get("room") or request.POST.get("room")
+    
+    existing = Attempt.objects.filter(quiz=quiz, taker=request.user).first()
+    if existing:
+        return redirect("take_quiz:attempt_result", attempt_id=existing.id)
+
+    attempt = Attempt.objects.create(
+        quiz=quiz,
+        taker=request.user,
+        started_at=timezone.now(),
+        room_code=room_code
+    )
+
+    return redirect("take_quiz:take_quiz", quiz_id=quiz.id, attempt_id=attempt.id)
 
 
 @login_required
@@ -55,8 +80,9 @@ def submit_quiz(request, attempt_id):
     if attempt.finished_at:
         return redirect("take_quiz:attempt_result", attempt_id=attempt.id)
 
-    questions = quiz.questions.all().order_by("order", "id").prefetch_related("choices")
+    auto_submitted = bool(request.POST.get("auto_submitted"))
 
+    questions = quiz.questions.all().order_by("order", "id").prefetch_related("choices")
     correct_count = 0
     total_questions = questions.count()
 
@@ -79,7 +105,7 @@ def submit_quiz(request, attempt_id):
                 selected_choice=selected_choice,
                 text=""
             )
-            if selected_choice and selected_choice.is_correct:
+            if selected_choice and getattr(selected_choice, "is_correct", False):
                 correct_count += 1
         else:
             text_ans = request.POST.get(field_name, "").strip()
@@ -96,7 +122,24 @@ def submit_quiz(request, attempt_id):
     else:
         score = None
 
-    attempt.finished_at = timezone.now()
+    now = timezone.now()
+    if quiz.time_limit_minutes:
+        deadline = attempt.started_at + timedelta(minutes=quiz.time_limit_minutes)
+        if now > deadline:
+            if auto_submitted:
+                attempt.finished_at = now
+                attempt.score = score
+                attempt.save()
+                messages.info(request, "Your answers were auto-submitted at the deadline.")
+                return redirect("take_quiz:attempt_result", attempt_id=attempt.id)
+            else:
+                attempt.finished_at = now
+                attempt.score = None
+                attempt.save()
+                messages.error(request, "Time limit exceeded — submission not accepted.")
+                return redirect('take_quiz:attempt_result', attempt_id=attempt.id)
+
+    attempt.finished_at = now
     attempt.score = score
     attempt.save()
 
