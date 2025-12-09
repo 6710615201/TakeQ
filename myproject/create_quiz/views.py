@@ -4,14 +4,18 @@ from django.views.generic import ListView, CreateView, UpdateView, DetailView, D
 from django.contrib.auth.decorators import login_required
 from django.utils.decorators import method_decorator
 from django.contrib.auth.mixins import LoginRequiredMixin, UserPassesTestMixin
-from myapp.models import Quiz, Question, Choice
+from myapp.models import Quiz, Question, Choice, Attempt, Answer
 from .forms import QuizForm, QuestionForm, make_choice_formset
 from django.http import JsonResponse, HttpResponseForbidden, Http404
 from django.views.decorators.http import require_POST
-from room.models import RoomQuizAssignment, RoomMembership
+from room.models import RoomQuizAssignment, RoomMembership, Room
 from django.contrib.auth import get_user_model
 from django.apps import apps
 from django.contrib import messages
+from django.views import View
+from room.models import Room
+from datetime import timedelta
+from django.utils import timezone
 
 User = get_user_model()
 
@@ -29,11 +33,7 @@ def user_is_room_owner_or_admin_for_quiz(user, quiz):
         'owner', 'admin'
     ]
 
-    return RoomMembership.objects.filter(
-        user=user,
-        room_id__in=room_ids,
-        role__in=allowed_roles
-    ).exists()
+    return RoomMembership.objects.filter(user=user, room_id__in=room_ids, role__in=allowed_roles).exists()
 
 @method_decorator(login_required, name="dispatch")
 class QuizListView(ListView):
@@ -50,15 +50,46 @@ class QuizCreateView(CreateView):
     form_class = QuizForm
     template_name = "create_quiz/quiz_form.html"
 
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        room_code = self.request.GET.get('room') or self.request.session.get('last_room_for_quiz_new')
+        ctx['room_code'] = room_code
+        return ctx
+
     def form_valid(self, form):
         obj = form.save(commit=False)
         obj.creator = self.request.user
         obj.is_published = False
         obj.save()
+
+        room_code = (
+            self.request.GET.get('room')
+            or self.request.POST.get('room')
+            or self.request.session.get('last_room_for_quiz_new')
+        )
+
+        if room_code:
+            self.request.session[f"last_room_for_quiz_{obj.pk}"] = room_code
+            if 'last_room_for_quiz_new' in self.request.session:
+                try:
+                    del self.request.session['last_room_for_quiz_new']
+                except KeyError:
+                    pass
+
+            detail_url = reverse("create_quiz:quiz_detail", args=[obj.pk])
+            return redirect(f"{detail_url}?room={room_code}")
+
         next_url = self.request.GET.get('next') or self.request.POST.get('next')
         if next_url:
             return redirect(next_url)
         return redirect("create_quiz:quiz_detail", pk=obj.pk)
+
+    def form_invalid(self, form):
+        room_code = self.request.GET.get('room') or self.request.POST.get('room')
+        if room_code:
+            self.request.session['last_room_for_quiz_new'] = room_code
+        return super().form_invalid(form)
+
 
 @method_decorator(login_required, name="dispatch")
 class QuizUpdateView(UpdateView):
@@ -75,6 +106,15 @@ class QuizUpdateView(UpdateView):
 
     def get_success_url(self):
         return reverse("create_quiz:quiz_detail", args=[self.object.pk])
+    
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        room_code = self.request.GET.get('room')
+        if room_code:
+            _set_last_room_for_quiz_in_session(self.request, self.object.pk, room_code)
+        ctx['room_code'] = room_code or self.request.session.get(f"last_room_for_quiz_{self.object.pk}")
+        return ctx
+
 
 @method_decorator(login_required, name="dispatch")
 class QuizDetailView(DetailView):
@@ -88,6 +128,15 @@ class QuizDetailView(DetailView):
         if not (quiz.creator == self.request.user or user_is_room_owner_or_admin_for_quiz(self.request.user, quiz)):
             raise Http404("No quiz found matching the query")
         return quiz
+    
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        quiz = self.get_object()
+        room_code = self.request.GET.get('room') or self.request.session.get(f"last_room_for_quiz_{quiz.pk}")
+        ctx['room_code'] = room_code
+        ctx['is_room_admin'] = user_is_room_owner_or_admin_for_quiz(self.request.user, quiz)
+        return ctx
+
 
 class QuizDeleteView(LoginRequiredMixin, UserPassesTestMixin, DeleteView):
     model = Quiz
@@ -226,7 +275,6 @@ def edit_question(request, pk):
     })
 
 
-
 @login_required
 def toggle_publish(request, pk):
     if request.method != "POST":
@@ -302,3 +350,133 @@ def delete_question(request, pk):
     messages.success(request, "Question deleted.")
 
     return redirect('create_quiz:quiz_detail', pk=quiz.pk)
+
+
+@method_decorator(login_required, name='dispatch')
+class QuizAttemptsListView(ListView):
+    model = Attempt
+    template_name = "create_quiz/quiz_attempts.html"
+    context_object_name = "attempts"
+
+    def dispatch(self, request, *args, **kwargs):
+        self.quiz = get_object_or_404(apps.get_model('myapp', 'Quiz'), pk=kwargs['pk'])
+        if not (self.quiz.creator == request.user or user_is_room_owner_or_admin_for_quiz(request.user, self.quiz)):
+            return HttpResponseForbidden()
+        return super().dispatch(request, *args, **kwargs)
+
+    def get_queryset(self):
+        Attempt = apps.get_model('myapp', 'Attempt')
+        return Attempt.objects.filter(quiz=self.quiz).select_related('taker').order_by('-started_at')
+
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        ctx['quiz'] = self.quiz
+        return ctx
+    
+
+@login_required
+def attempt_detail(request, attempt_id):
+    Attempt = apps.get_model('myapp', 'Attempt')
+    Answer = apps.get_model('myapp', 'Answer')
+    Choice = apps.get_model('myapp', 'Choice')
+    attempt = get_object_or_404(Attempt, pk=attempt_id)
+    quiz = attempt.quiz
+
+    if not (quiz.creator == request.user or user_is_room_owner_or_admin_for_quiz(request.user, quiz)):
+        return HttpResponseForbidden()
+
+    answers = attempt.answers.select_related('question', 'selected_choice').all().order_by('question__order', 'question__id')
+
+    answer_rows = []
+    for a in answers:
+        row = {
+            'question': a.question,
+            'selected_choice': a.selected_choice,
+            'text': a.text,
+            'is_correct': a.is_correct,
+            'answer_id': a.pk,
+        }
+        answer_rows.append(row)
+
+    return render(request, 'create_quiz/attempt_detail.html', {
+        'quiz': quiz,
+        'attempt': attempt,
+        'answer_rows': answer_rows,
+    })
+
+def _set_last_room_for_quiz_in_session(request, quiz_pk, room_code):
+    if not room_code:
+        return
+    key = f"last_room_for_quiz_{quiz_pk}"
+    request.session[key] = room_code
+
+@require_POST
+def quiz_delete(request, pk):
+    quiz = get_object_or_404(Quiz, pk=pk)
+
+    if not (quiz.creator == request.user or user_is_room_owner_or_admin_for_quiz(request.user, quiz)):
+        return HttpResponseForbidden()
+
+    posted_room = (request.POST.get('room') or "").strip()
+    session_key = f"last_room_for_quiz_{quiz.pk}"
+    session_room = request.session.get(session_key)
+
+    room_code_candidate = posted_room or session_room
+
+    if room_code_candidate and Room.objects.filter(code=room_code_candidate).exists():
+        redirect_to = reverse('room:detail', args=[room_code_candidate])
+    else:
+        redirect_to = reverse('create_quiz:quiz_list')
+
+    quiz.delete()
+
+    try:
+        if session_key in request.session:
+            del request.session[session_key]
+    except Exception:
+        pass
+
+    messages.success(request, "Quiz deleted.")
+    return redirect(redirect_to)
+
+@require_POST
+def mark_answer(request, answer_id):
+    ans = get_object_or_404(Answer, pk=answer_id)
+    attempt = ans.attempt
+    quiz = attempt.quiz
+
+    if not (quiz.creator == request.user or user_is_room_owner_or_admin_for_quiz(request.user, quiz)):
+        return HttpResponseForbidden()
+
+    mark = request.POST.get("mark")
+    if mark == "correct":
+        ans.is_correct = True
+    else:
+        ans.is_correct = False
+    ans.save()
+
+    questions = quiz.questions.all()
+    gradable_qs = questions.filter(qtype__in=["mcq", "short"])
+    total_gradable = gradable_qs.count()
+
+    correct_count = 0
+    for q in gradable_qs:
+        if q.qtype == "mcq":
+            a = attempt.answers.filter(question=q).first()
+            if a and a.selected_choice and getattr(a.selected_choice, "is_correct", False):
+                correct_count += 1
+        else:
+            a = attempt.answers.filter(question=q).first()
+            if a and a.is_correct is True:
+                correct_count += 1
+
+    if total_gradable > 0:
+        attempt.score = (correct_count / total_gradable) * 100.0
+    else:
+        attempt.score = None
+
+    attempt.save()
+
+    messages.success(request, "Answer marked.")
+    next_url = request.POST.get("next") or request.META.get("HTTP_REFERER") or "/"
+    return redirect(next_url)

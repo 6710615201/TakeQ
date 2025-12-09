@@ -7,7 +7,17 @@
     <h2>{{ quiz.title }}</h2>
     <div>
       <a class="btn btn-outline-info" href="{% url 'create_quiz:add_question' quiz.pk %}">Add Question</a>
-      <a class="btn btn-outline-secondary" href="{% url 'create_quiz:quiz_list' %}">Back to My Quizzes</a>
+      <a class="btn btn-outline-success" href="{% url 'create_quiz:quiz_attempts' quiz.pk %}">View attempts</a>
+      <form method="post" action="{% url 'create_quiz:quiz_delete' quiz.pk %}" style="display:inline;">
+        {% csrf_token %}
+        <input type="hidden" name="room" value="{{ room_code }}">
+        <button type="submit"
+                class="btn btn-sm btn-outline-danger"
+                onclick="return confirm('Delete this quiz? This action cannot be undone.');">
+          Delete
+        </button>
+      </form>
+      <a class="btn btn-outline-secondary" href="{% url 'room:detail' room_code %}">Back</a>
     </div>
   </div>
 
@@ -26,7 +36,6 @@
   <h4>Questions</h4>
 
   <div id="questions-list" class="list-group">
-    {# Ensure questions ordered by .order #}
     {% for q in quiz.questions.all|dictsort:"order" %}
       <div class="list-group-item d-flex justify-content-between align-items-center" draggable="true" data-qid="{{ q.id }}">
         <div>
@@ -133,7 +142,7 @@
     }).then(async res => {
       if(res.ok){
         statusEl.innerText = 'Saved. Redirecting...';
-        setTimeout(()=> window.location.href = "{% url 'create_quiz:quiz_list' %}", 400);
+        setTimeout(()=> window.location.href = "{% url 'room:detail' room_code %}", 400);
         return;
       }
       let txt = await res.text();

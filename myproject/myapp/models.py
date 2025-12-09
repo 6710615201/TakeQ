@@ -47,6 +47,7 @@ class Question(models.Model):
         ),
     )
     order = models.PositiveIntegerField(default=0)
+    correct_text = models.TextField(blank=True, default="", help_text="...")
 
 
 class Choice(models.Model):
@@ -80,7 +81,6 @@ class Attempt(models.Model):
     finished_at = models.DateTimeField(null=True, blank=True)
     score = models.FloatField(null=True, blank=True)
 
-    # room linkage (nullable)
     room = models.ForeignKey(
         'room.Room',
         null=True,
@@ -97,7 +97,6 @@ class Attempt(models.Model):
 
 
 class Answer(models.Model):
-    # 🔹 attempt nullable
     attempt = models.ForeignKey(
         Attempt,
         on_delete=models.CASCADE,
@@ -105,7 +104,6 @@ class Answer(models.Model):
         null=True,
         blank=True,
     )
-    # 🔹 question nullable
     question = models.ForeignKey(
         Question,
         on_delete=models.CASCADE,
@@ -119,3 +117,4 @@ class Answer(models.Model):
         blank=True,
     )
     text = models.TextField(blank=True)
+    is_correct = models.BooleanField(null=True, blank=True, help_text="...")
